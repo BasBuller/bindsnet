@@ -3,52 +3,22 @@ import torch
 import numpy as np
 
 from torch import Tensor
+import torch.nn.functional as F
 from numpy import ndarray
 from typing import Tuple, Union
 from torch.nn.modules.utils import _pair
 
 
-def get_im2col_indices(x_shape: Tuple[int, int, int, int], kernel_height: int,
-                       kernel_width: int, padding: Tuple[int, int]=(0, 0),
-                       stride: Tuple[int, int]=(1, 1)) -> Tuple[ndarray, ndarray, ndarray]:
+def im2col_indices(
+    x: Tensor,
+    kernel_height: int,
+    kernel_width: int,
+    padding: Tuple[int, int] = (0, 0),
+    stride: Tuple[int, int] = (1, 1),
+) -> Tensor:
     # language=rst
     """
-    Figure out what the size of the output should be. Taken from `this repository
-    <https://github.com/huyouare/CS231n/blob/master/assignment2/cs231n/im2col.py>`_.
-
-    :param x_shape: Shape of the input tensor.
-    :param kernel_height: Height of the convolutional kernel in pixels.
-    :param kernel_width: Width of the convolutional kernel in pixels.
-    :param padding: Amount of zero padding on the input image.
-    :param stride: Amount to stride over image by per convolution.
-    :return: Indices for converted image tensor to column-wise format.
-    """
-    _, c, h, w = x_shape
-
-    assert (h + 2 * padding[0] - kernel_height) % stride[0] == 0
-    assert (w + 2 * padding[1] - kernel_height) % stride[1] == 0
-
-    out_height = int((h + 2 * padding[0] - kernel_height) / stride[0] + 1)
-    out_width = int((w + 2 * padding[1] - kernel_width) / stride[1] + 1)
-
-    i0 = np.repeat(np.arange(kernel_height), kernel_width)
-    i0 = np.tile(i0, c)
-    i1 = stride[0] * np.repeat(np.arange(out_height), out_width)
-    j0 = np.tile(np.arange(kernel_width), kernel_height * c)
-    j1 = stride[1] * np.tile(np.arange(out_width), out_height)
-    i = i0.reshape(-1, 1) + i1.reshape(1, -1)
-    j = j0.reshape(-1, 1) + j1.reshape(1, -1)
-    k = np.repeat(np.arange(c), kernel_height * kernel_width).reshape(-1, 1)
-
-    return k, i, j
-
-
-def im2col_indices(x: Tensor, kernel_height: int, kernel_width: int, padding: Tuple[int, int] = (0, 0),
-                   stride: Tuple[int, int] = (1, 1)) -> Tensor:
-    # language=rst
-    """
-    An implementation of im2col based on some fancy indexing. Taken from `this repository
-    <https://github.com/huyouare/CS231n/blob/master/assignment2/cs231n/im2col.py>`_.
+    im2col is a special case of unfold which is implemented inside of Pytorch.
 
     :param x: Input image tensor to be reshaped to column-wise format.
     :param kernel_height: Height of the convolutional kernel in pixels.
@@ -57,25 +27,23 @@ def im2col_indices(x: Tensor, kernel_height: int, kernel_width: int, padding: Tu
     :param stride: Amount to stride over image by per convolution.
     :return: Input tensor reshaped to column-wise format.
     """
-    # Zero-pad the input
-    p = padding
-    x_padded = np.pad(x, ((0, 0), (0, 0), (p[0], p[0]), (p[1], p[1])), mode='constant')
 
-    k, i, j = get_im2col_indices(x.shape, kernel_height, kernel_width, padding, stride)
-
-    cols = x_padded[:, k, i, j]
-    c = x.shape[1]
-    cols = cols.transpose(1, 2, 0).reshape(kernel_height * kernel_width * c, -1)
-
-    return Tensor(cols)
+    return F.unfold(
+        x, (kernel_height, kernel_width), padding=padding, stride=stride
+    ).squeeze()
 
 
-def col2im_indices(cols: Tensor, x_shape: Tuple[int, int, int, int], kernel_height: int, kernel_width: int,
-                   padding: Tuple[int, int]=(0, 0), stride: Tuple[int, int]=(1, 1)) -> Tensor:
+def col2im_indices(
+    cols: Tensor,
+    x_shape: Tuple[int, int, int, int],
+    kernel_height: int,
+    kernel_width: int,
+    padding: Tuple[int, int] = (0, 0),
+    stride: Tuple[int, int] = (1, 1),
+) -> Tensor:
     # language=rst
     """
-    An implementation of col2im based on fancy indexing and np.add.at. Taken from `this repository
-    <https://github.com/huyouare/CS231n/blob/master/assignment2/cs231n/im2col.py>`_.
+    col2im is a special case of fold which is implemented inside of Pytorch.
 
     :param cols: Image tensor in column-wise format.
     :param x_shape: Shape of original image tensor.
@@ -85,21 +53,15 @@ def col2im_indices(cols: Tensor, x_shape: Tuple[int, int, int, int], kernel_heig
     :param stride: Amount to stride over image by per convolution.
     :return: Image tensor in original image shape.
     """
-    n, c, h, w = x_shape
-    h_padded, w_padded = h + 2 * padding[0], w + 2 * padding[1]
-    x_padded = np.zeros((n, c, h_padded, w_padded), dtype=cols.dtype)
-    k, i, j = get_im2col_indices(x_shape, kernel_height, kernel_width, padding, stride)
-    cols_reshaped = cols.reshape(c * kernel_height * kernel_width, -1, n)
-    cols_reshaped = cols_reshaped.transpose(2, 0, 1)
-    np.add.at(x_padded, (slice(None), k, i, j), cols_reshaped)
 
-    if padding == (0, 0):
-        return Tensor(x_padded)
-
-    return x_padded[:, :, padding[0]:-padding[0], padding[1]:-padding[1]]
+    return F.fold(
+        cols, x_shape, (kernel_height, kernel_width), padding=padding, stride=stride
+    )
 
 
-def get_square_weights(weights: Tensor, n_sqrt: int, side: Union[int, Tuple[int, int]]) -> Tensor:
+def get_square_weights(
+    weights: Tensor, n_sqrt: int, side: Union[int, Tuple[int, int]]
+) -> Tensor:
     # language=rst
     """
     Return a grid of a number of filters ``sqrt ** 2`` with side lengths ``side``.
@@ -123,7 +85,7 @@ def get_square_weights(weights: Tensor, n_sqrt: int, side: Union[int, Tuple[int,
             x = i * side[0]
             y = (j % n_sqrt) * side[1]
             filter_ = weights[:, n].contiguous().view(*side)
-            square_weights[x: x + side[0], y: y + side[1]] = filter_
+            square_weights[x : x + side[0], y : y + side[1]] = filter_
 
     return square_weights
 
@@ -145,14 +107,21 @@ def get_square_assignments(assignments: Tensor, n_sqrt: int) -> Tensor:
             if not n < assignments.size(0):
                 break
 
-            square_assignments[i: (i + 1), (j % n_sqrt): ((j % n_sqrt) + 1)] = assignments[n]
+            square_assignments[
+                i : (i + 1), (j % n_sqrt) : ((j % n_sqrt) + 1)
+            ] = assignments[n]
 
     return square_assignments
 
 
-def reshape_locally_connected_weights(w: Tensor, n_filters: int, kernel_size: Union[int, Tuple[int, int]],
-                                      conv_size: Union[int, Tuple[int, int]], locations: Tensor,
-                                      input_sqrt: Union[int, Tuple[int, int]]) -> Tensor:
+def reshape_locally_connected_weights(
+    w: Tensor,
+    n_filters: int,
+    kernel_size: Union[int, Tuple[int, int]],
+    conv_size: Union[int, Tuple[int, int]],
+    locations: Tensor,
+    input_sqrt: Union[int, Tuple[int, int]],
+) -> Tensor:
     # language=rst
     """
     Get the weights from a locally connected layer and reshape them to be two-dimensional and square.
@@ -181,14 +150,20 @@ def reshape_locally_connected_weights(w: Tensor, n_filters: int, kernel_size: Un
         for n2 in range(c2):
             for feature in range(n_filters):
                 n = n1 * c2 + n2
-                filter_ = w[locations[:, n], feature * (c1 * c2) + (n // c2sqrt) * c2sqrt + (n % c2sqrt)].view(k1, k2)
-                w_[feature * k1: (feature + 1) * k1, n * k2: (n + 1) * k2] = filter_
+                filter_ = w[
+                    locations[:, n],
+                    feature * (c1 * c2) + (n // c2sqrt) * c2sqrt + (n % c2sqrt),
+                ].view(k1, k2)
+                w_[feature * k1 : (feature + 1) * k1, n * k2 : (n + 1) * k2] = filter_
 
     if c1 == 1 and c2 == 1:
         square = torch.zeros((i1 * fs, i2 * fs))
 
         for n in range(n_filters):
-            square[(n // fs) * i1: ((n // fs) + 1) * i2, (n % fs) * i2: ((n % fs) + 1) * i2] = w_[n * i1: (n + 1) * i2]
+            square[
+                (n // fs) * i1 : ((n // fs) + 1) * i2,
+                (n % fs) * i2 : ((n % fs) + 1) * i2,
+            ] = w_[n * i1 : (n + 1) * i2]
 
         return square
     else:
@@ -199,9 +174,12 @@ def reshape_locally_connected_weights(w: Tensor, n_filters: int, kernel_size: Un
                 for f1 in range(fs):
                     for f2 in range(fs):
                         if f1 * fs + f2 < n_filters:
-                            square[k1 * (n1 * fs + f1): k1 * (n1 * fs + f1 + 1),
-                                   k2 * (n2 * fs + f2): k2 * (n2 * fs + f2 + 1)] = \
-                                   w_[(f1 * fs + f2) * k1: (f1 * fs + f2 + 1) * k1,
-                                      (n1 * c2 + n2) * k2: (n1 * c2 + n2 + 1) * k2]
+                            square[
+                                k1 * (n1 * fs + f1) : k1 * (n1 * fs + f1 + 1),
+                                k2 * (n2 * fs + f2) : k2 * (n2 * fs + f2 + 1),
+                            ] = w_[
+                                (f1 * fs + f2) * k1 : (f1 * fs + f2 + 1) * k1,
+                                (n1 * c2 + n2) * k2 : (n1 * c2 + n2 + 1) * k2,
+                            ]
 
         return square
