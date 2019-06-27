@@ -303,6 +303,8 @@ class Network(torch.nn.Module):
 
         # Simulate network activity for `time` timesteps.
         for t in range(timesteps):
+            kwargs["t"] = t
+            kwargs["timesteps"] = timesteps
             for l in self.layers:
                 # Update each layer of nodes.
                 if isinstance(self.layers[l], AbstractInput):
