@@ -172,6 +172,8 @@ class Input(Nodes, AbstractInput):
         :param trace_scale: Scaling factor for spike trace.
         :param sum_input: Whether to sum all inputs.
         """
+        thresh = kwargs.get("thresh", 0.5)
+        self.thresh = torch.ones(n) * thresh
         super().__init__(n, shape, traces, traces_additive, tc_trace, trace_scale, sum_input)
 
     def forward(self, x: torch.Tensor) -> None:
@@ -629,7 +631,7 @@ class CurrentLIFNodes(Nodes):
         self.refrac_count.zero_()  # Refractory period counters.
 
     def _compute_decays(self) -> None:
-        # language=rst
+        # language=rsthttps://www.twitch.tv/themitsuhiko/videos
         """
         Sets the relevant decays.
         """
@@ -1152,3 +1154,101 @@ class SRM0Nodes(Nodes):
         """
         super()._compute_decays()
         self.decay = torch.exp(-self.dt / self.tc_decay)  # Neuron voltage decay (per timestep).
+
+
+# ### Importance LIF nodes
+class ImportanceLIFNodes(Nodes):
+    def __init__(
+            self,
+            n: Optional[int] = None,
+            shape: Optional[Iterable[int]] = None,
+            traces: bool = False,
+            traces_additive: bool = False,
+            tc_trace: Union[float, torch.Tensor] = 20.0,
+            trace_scale: Union[float, torch.Tensor] = 1.0,
+            sum_input: bool = False,
+            thresh: Union[float, torch.Tensor] = -52.0,
+            rest: Union[float, torch.Tensor] = -65.0,
+            reset: Union[float, torch.Tensor] = -65.0,
+            refrac: Union[int, torch.Tensor] = 5,
+            tc_decay: Union[float, torch.Tensor] = 100.0,
+            lbound: float = None,
+            **kwargs,
+    ) -> None:
+        # language=rst
+        """
+        Instantiates a layer of LIF neurons.
+
+        :param n: The number of neurons in the layer.
+        :param shape: The dimensionality of the layer.
+        :param traces: Whether to record spike traces.
+        :param traces_additive: Whether to record spike traces additively.
+        :param tc_trace: Time constant of spike trace decay.
+        :param trace_scale: Scaling factor for spike trace.
+        :param sum_input: Whether to sum all inputs.
+        :param thresh: Spike threshold voltage.
+        :param rest: Resting membrane voltage.
+        :param reset: Post-spike reset voltage.
+        :param refrac: Refractory (non-firing) period of the neuron.
+        :param tc_decay: Time constant of neuron voltage decay.
+        :param lbound: Lower bound of the voltage.
+        """
+        super().__init__(n, shape, traces, traces_additive, tc_trace, trace_scale, sum_input)
+
+        self.register_buffer('rest', torch.tensor(rest))  # Rest voltage.
+        self.register_buffer('reset', torch.tensor(reset))  # Post-spike reset voltage.
+        self.register_buffer('thresh', torch.tensor(thresh))  # Spike threshold voltage.
+        self.register_buffer('refrac', torch.tensor(refrac))  # Post-spike refractory period.
+        self.register_buffer('tc_decay', torch.tensor(tc_decay))  # Time constant of neuron voltage decay.
+        self.register_buffer('decay', torch.zeros(self.shape))  # Set in _compute_decays.
+        self.register_buffer('v', self.rest * torch.ones(self.shape))  # Neuron voltages.
+        self.register_buffer('refrac_count', torch.zeros(self.shape))  # Refractory period counters.
+
+        self.lbound = lbound  # Lower bound of voltage.
+
+    def forward(self, x: torch.Tensor) -> None:
+        # language=rst
+        """
+        Runs a single simulation step.
+
+        :param x: Inputs to the layer.
+        """
+        # Decay voltages.
+        v_force = x + self.x
+        decay = - (self.v - self.reset + v_force) / self.tc_decay
+        self.v = self.v + decay
+
+        # Decrement refractory counters.
+        self.refrac_count = (self.refrac_count > 0).float() * (
+                self.refrac_count - self.dt
+        )
+
+        # Check for spiking neurons.
+        self.s = self.v >= self.thresh
+
+        # Refractoriness and voltage reset.
+        self.refrac_count.masked_fill_(self.s, self.refrac)
+        self.v.masked_fill_(self.s, self.reset)
+
+        # Voltage clipping to lower bound.
+        if self.lbound is not None:
+            self.v.masked_fill_(self.v < self.lbound, self.lbound)
+
+        if self.traces and self.traces_additive:
+            self.x = self.x - (self.x - self.trace_scale * x) / self.tc_trace
+
+    def reset_(self) -> None:
+        # language=rst
+        """
+        Resets relevant state variables.
+        """
+        super().reset_()
+        self.v.fill_(self.rest)  # Neuron voltages.
+        self.refrac_count.zero_() # Refractory period counters.
+
+    def _compute_decays(self) -> None:
+        # language=rst
+        """
+        Sets the relevant decays.
+        """
+        pass

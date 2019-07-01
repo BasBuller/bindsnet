@@ -1114,3 +1114,52 @@ class StepMSTDPET(LearningRule):
         self.eligibility = self.eligibility.view(self.connection.w.size())
 
         super().update()
+
+
+class FedeSTDP(LearningRule):
+    def __init__(
+            self,
+            connection: AbstractConnection,
+            nu: Optional[Union[float, Sequence[float]]] = None,
+            weight_decay: float = 0.0,
+            **kwargs
+    ) -> None:
+        super().__init__(
+            connection=connection, nu=nu, weight_decay=weight_decay, **kwargs
+        )
+
+        if isinstance(connection, (Connection, LocallyConnectedConnection)):
+            self.update = self._connection_update
+        elif isinstance(connection, Conv2dConnection):
+            self.update = self._conv2d_connection_update
+        else:
+            raise NotImplementedError(
+                "This learning rule is not supported for this Connection type."
+            )
+
+        self.w_avg = torch.tensor(kwargs.get("w_avg", 0.5))
+        self.a = torch.tensor(kwargs.get("a", 0.))
+        self.tc_plus = torch.tensor(kwargs.get("tc_plus", 20.0))
+        self.tc_minus = torch.tensor(kwargs.get("tc_minus", 20.0))
+
+    def _connection_update(self, **kwargs) -> None:
+        # Normalize traces
+        trace = self.connection.target.s.clone().float()
+        trace = trace / (trace.max() + 1e-6)
+
+        # LTP weights
+        ltp_w = torch.exp(-(self.connection.w - self.w_avg))
+        ltp_x = torch.exp(trace) - self.a
+
+        # LTD weights
+        ltd_w = -torch.exp(self.connection.w - self.w_avg)
+        ltd_x = torch.exp(1 - trace) - self.a
+
+        # Define total weight updates
+        dw = self.nu[0] * (ltp_w * ltp_x + ltd_w * ltd_x)
+        self.connection.w += dw
+
+        super().update()
+
+    def _conv2d_connection_update(self, **kwargs) -> None:
+        pass

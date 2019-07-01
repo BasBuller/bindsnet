@@ -122,3 +122,47 @@ class AutoEncoderLoss(AbstractReward):
     
     def update(self, **kwargs) -> None:
         pass
+
+
+class SNNCrossEntropyLoss(AbstractReward):
+    def __init__(self, **kwargs):
+        self.device = kwargs.get("device", torch.device("cpu"))
+        self.network = kwargs.get("network", None)
+        self.prev_out_spikes = None
+        self.t_thresh = 100
+        self.t_window = 50
+        self.target_rate = 10
+        self.epsilon = 2  # Maximum allowed deviation from target value
+
+    def compute(self, **kwargs):
+        t = kwargs["t"]
+        if self.prev_out_spikes is None:
+            self.prev_out_spikes = torch.zeros(self.network.output.s.shape)
+
+        # Set reward to 0 if time is below threshold
+        if t < self.t_thresh:
+            kwargs["element_wise_reward"] = torch.zeros_like(self.network.output.s).float()
+            kwargs["reward"] = 0
+
+        # Determine reward
+        elif t >= self.t_thresh:
+            label = kwargs.get("label", None)
+            output_spikes = self.network.monitors["output_spikes"].get("s")
+            window = output_spikes[:, t-self.t_window:t]
+            out_sum = window.sum(1).float().unsqueeze(0)
+            elem_reward = torch.zeros_like(out_sum)
+
+            elem_reward = label * self.target_rate - out_sum
+            elem_reward[elem_reward>=1] = 1
+            elem_reward[elem_reward<=-1] = -1
+
+            # Assign reward to kwargs
+            kwargs["element_wise_reward"] = elem_reward
+            kwargs["reward"] = elem_reward.sum()
+        return kwargs
+
+    def update(self, **kwargs):
+        pass
+
+    def reset_(self):
+        self.prev_out_spikes = None
