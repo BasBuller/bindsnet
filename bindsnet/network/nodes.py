@@ -1215,7 +1215,7 @@ class ImportanceLIFNodes(Nodes):
         """
         # Decay voltages.
         v_force = x + self.x
-        decay = - (self.v - self.reset + v_force) / self.tc_decay
+        decay = (-self.v + self.reset + v_force) / self.tc_decay
         self.v = self.v + decay
 
         # Decrement refractory counters.

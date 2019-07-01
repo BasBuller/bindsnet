@@ -129,7 +129,7 @@ class SNNCrossEntropyLoss(AbstractReward):
         self.device = kwargs.get("device", torch.device("cpu"))
         self.network = kwargs.get("network", None)
         self.prev_out_spikes = None
-        self.t_thresh = 100
+        self.t_thresh = 0
         self.t_window = 50
         self.target_rate = 10
         self.epsilon = 2  # Maximum allowed deviation from target value
@@ -148,7 +148,7 @@ class SNNCrossEntropyLoss(AbstractReward):
         elif t >= self.t_thresh:
             label = kwargs.get("label", None)
             output_spikes = self.network.monitors["output_spikes"].get("s")
-            window = output_spikes[:, t-self.t_window:t]
+            window = output_spikes[:, max(0, t-self.t_window):t]
             out_sum = window.sum(1).float().unsqueeze(0)
             elem_reward = torch.zeros_like(out_sum)
 
