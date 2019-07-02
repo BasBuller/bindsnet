@@ -1197,12 +1197,13 @@ class ImportanceLIFNodes(Nodes):
 
         self.register_buffer('rest', torch.tensor(rest))  # Rest voltage.
         self.register_buffer('reset', torch.tensor(reset))  # Post-spike reset voltage.
-        self.register_buffer('thresh', torch.tensor(thresh))  # Spike threshold voltage.
+        self.register_buffer('thresh', torch.ones(n)*thresh)  # Spike d voltage.
         self.register_buffer('refrac', torch.tensor(refrac))  # Post-spike refractory period.
         self.register_buffer('tc_decay', torch.tensor(tc_decay))  # Time constant of neuron voltage decay.
         self.register_buffer('decay', torch.zeros(self.shape))  # Set in _compute_decays.
         self.register_buffer('v', self.rest * torch.ones(self.shape))  # Neuron voltages.
         self.register_buffer('refrac_count', torch.zeros(self.shape))  # Refractory period counters.
+        self.register_buffer('thresh_avg', torch.tensor(thresh))  # Average value for the thresholds
 
         self.lbound = lbound  # Lower bound of voltage.
 
