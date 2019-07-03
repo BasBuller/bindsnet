@@ -335,6 +335,8 @@ class Network(torch.nn.Module):
                     else:
                         self.layers[l].s[unclamp[t]] = 0
 
+                self.layers[l]._compute_decays()
+
                 # Inject voltage to neurons.
                 inject_v = injects_v.get(l, None)
                 if inject_v is not None:
@@ -358,9 +360,9 @@ class Network(torch.nn.Module):
             for m in self.monitors:
                 self.monitors[m].record()
 
-        # Re-normalize connections.
-        for c in self.connections:
-            self.connections[c].normalize()
+        # # Re-normalize connections.
+        # for c in self.connections:
+        #     self.connections[c].normalize()
 
     def reset_(self) -> None:
         # language=rst

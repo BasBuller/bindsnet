@@ -89,13 +89,13 @@ class Nodes(ABC, torch.nn.Module):
 
         :param x: Inputs to the layer.
         """
-        if self.traces:
+        # if self.traces:
             # Decay and set spike traces.
-            self.x *= self.trace_decay
-            if self.traces_additive:
-                self.x += self.trace_scale * self.s.float()
-            else:
-                self.x.masked_fill_(self.s != 0, 1)
+            # self.x *= self.trace_decay
+            # if self.traces_additive:
+            #     self.x += self.trace_scale * self.s.float()
+            # else:
+            #     self.x.masked_fill_(self.s != 0, 1)
 
         if self.sum_input:
             # Add current input to running sum.
@@ -121,10 +121,12 @@ class Nodes(ABC, torch.nn.Module):
         """
         Abstract base class method for setting decays.
         """
-        if self.traces:
-            self.trace_decay = torch.exp(
-                -self.dt / self.tc_trace
-            )  # Spike trace decay (per timestep).
+        # if self.traces:
+        #     self.trace_decay = torch.exp(
+        #         -self.dt / self.tc_trace
+        #     )  # Spike trace decay (per timestep).
+        if self.traces and self.traces_additive:
+            self.x = self.x + (-self.x + self.trace_scale * self.s.float()) / self.tc_trace
 
     def train(self, mode: bool=True):
         """Sets the node in training mode.
@@ -558,7 +560,9 @@ class CurrentLIFNodes(Nodes):
         :param n: The number of neurons in the layer.
         :param shape: The dimensionality of the layer.
         :param traces: Whether to record spike traces.
-        :param traces_additive: Whether to record spike traces additively.
+        :param traces_additive: Whether to record spike traces additively
+        if self.traces and self.traces_additive:
+            self.x = self.x + (-self.x + self.trace_scale * self.s.float()) / self.tc_trace.
         :param tc_trace: Time constant of spike trace decay.
         :param trace_scale: Scaling factor for spike trace.
         :param sum_input: Whether to sum all inputs.
@@ -1215,8 +1219,8 @@ class ImportanceLIFNodes(Nodes):
         :param x: Inputs to the layer.
         """
         # Decay voltages.
-        v_force = x + self.x
-        decay = (-self.v + self.reset + v_force) / self.tc_decay
+        v_force = x - self.x
+        decay = (-self.v + self.reset) / self.tc_decay + v_force
         self.v = self.v + decay
 
         # Decrement refractory counters.
@@ -1235,8 +1239,7 @@ class ImportanceLIFNodes(Nodes):
         if self.lbound is not None:
             self.v.masked_fill_(self.v < self.lbound, self.lbound)
 
-        if self.traces and self.traces_additive:
-            self.x = self.x - (self.x - self.trace_scale * x) / self.tc_trace
+        super().forward(x)
 
     def reset_(self) -> None:
         # language=rst
@@ -1252,4 +1255,4 @@ class ImportanceLIFNodes(Nodes):
         """
         Sets the relevant decays.
         """
-        pass
+        super()._compute_decays()
