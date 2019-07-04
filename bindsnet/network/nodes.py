@@ -1220,7 +1220,6 @@ class ImportanceLIFNodes(Nodes):
         """
         # Decay voltages.
         v_force = x - self.x
-        # v_force = x
         delta_v = (-self.v + self.reset) / self.tc_decay + v_force
         self.v = self.v + delta_v
 
