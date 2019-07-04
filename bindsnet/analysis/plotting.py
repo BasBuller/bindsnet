@@ -1,3 +1,4 @@
+import os
 import torch
 import numpy as np
 import matplotlib.pyplot as plt
@@ -10,7 +11,7 @@ from typing import Tuple, List, Optional, Sized, Dict, Union
 
 from ..utils import reshape_locally_connected_weights
 
-plt.ion()
+# plt.ion()
 
 
 def plot_input(
@@ -714,3 +715,50 @@ def plot_hidden_activity(spikes, figsize=(5, 5)):
     im = ax.legend()
     
     return im
+
+
+##########################################################################
+# Personal plotting functions
+##########################################################################
+def plot_network_weights(network, save_dir=None):
+    for i, (_, conn) in enumerate(network.connections.items()):
+        w = conn.w.clone()
+        _ = plot_weights(w, wmin=-1, wmax=1)
+        plt.title("Weights for connection {}".format(i))
+        if save_dir:
+            plt.savefig(os.path.join(save_dir, "weights{}.pdf".format(i)))
+
+
+def plot_network_thresholds(network, start_value=None, save_dir=None):
+    for i, (_, layer) in enumerate(network.layers.items()):
+        if i == 0:
+            continue
+        thresholds_end = layer.thresh.clone()
+        plt.figure(figsize=(10, 5))
+        plt.plot(thresholds_end.numpy(), label="end")
+        if start_value:
+            thresholds_start = np.ones_like(thresholds_end.numpy()) * start_value
+            plt.plot(thresholds_start, label="start")
+        plt.legend()
+        plt.title("Thresholds layer {}".format(i))
+        if save_dir:
+            plt.savefig(os.path.join(save_dir, "spiking_thresholds_layer{}.pdf".format(i)))
+
+
+def plot_network_spikes(network, dataset, spikes, time, save_dir=None):
+    network = network.train(False)
+    for i, test_sample in enumerate(dataset):
+        inpts = {"input": test_sample["input"].unsqueeze(0)}
+        label = test_sample["label"].unsqueeze(0)
+
+        network.reset_()
+        network.run(inpts=inpts, time=time, input_time_dim=1, label=label)
+
+        _spikes = {}
+        for layer, spike_sample in spikes.items():
+            n_neurons = network.layers[layer].n
+            _spikes[layer] = spike_sample.get("s").view(n_neurons, time)
+
+        plot_spikes(_spikes)
+        if save_dir:
+            plt.savefig(os.path.join(save_dir, "spikes_signal_{}.pdf".format(i)))

@@ -126,7 +126,7 @@ class Nodes(ABC, torch.nn.Module):
         #         -self.dt / self.tc_trace
         #     )  # Spike trace decay (per timestep).
         if self.traces and self.traces_additive:
-            self.x = self.x + (-self.x + self.trace_scale * self.s.float()) / self.tc_trace
+            self.x = self.x + (-self.x + self.trace_scale * self.s.float()) / self.tc_trace 
 
     def train(self, mode: bool=True):
         """Sets the node in training mode.
@@ -1220,8 +1220,9 @@ class ImportanceLIFNodes(Nodes):
         """
         # Decay voltages.
         v_force = x - self.x
-        decay = (-self.v + self.reset) / self.tc_decay + v_force
-        self.v = self.v + decay
+        # v_force = x
+        delta_v = (-self.v + self.reset) / self.tc_decay + v_force
+        self.v = self.v + delta_v
 
         # Decrement refractory counters.
         self.refrac_count = (self.refrac_count > 0).float() * (

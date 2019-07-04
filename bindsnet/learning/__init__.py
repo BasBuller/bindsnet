@@ -808,6 +808,9 @@ class Rmax(LearningRule):
         super().update()
 
 
+#################################################################################################
+# Personal Learning Rules
+#################################################################################################
 class StepMSTDP(LearningRule):
     # language=rst
     """
@@ -1161,5 +1164,118 @@ class FedeSTDP(LearningRule):
 
         super().update()
 
+    def _conv2d_connection_update(self, **kwargs) -> None:
+        pass
+
+
+class CorrelatedFedeSTDP(LearningRule):
+    def __init__(
+        self,
+        connection: AbstractConnection,
+        nu: Optional[Union[float, Sequence[float]]] = None,
+        weight_decay: float = 0.0,
+        **kwargs
+    ) -> None:
+        super().__init__(
+            connection=connection, nu=nu, weight_decay=weight_decay, **kwargs
+        )
+
+        if isinstance(connection, (Connection, LocallyConnectedConnection)):
+            self.update = self._connection_update
+        elif isinstance(connection, Conv2dConnection):
+            self.update = self._conv2d_connection_update
+        else:
+            raise NotImplementedError(
+                "This learning rule is not supported for this Connection type."
+            )
+
+        self.w_avg = torch.tensor(kwargs.get("w_avg", 0.5))
+        self.a = torch.tensor(kwargs.get("a", 0.))
+        
+    def _connection_update(self, **kwargs) -> None:
+        # Normalize traces
+        pre_trace = self.connection.source.x.clone().float()
+        if len(list(pre_trace.shape)) > 1:
+            pre_trace = pre_trace[0, 0, 0, :]
+        pre_trace = pre_trace / (pre_trace.max() + 1e-6)
+        post_trace = self.connection.target.x.clone().float()
+        post_trace = post_trace / (post_trace.max() + 1e-6)
+        trace = pre_trace.unsqueeze(1) * post_trace.unsqueeze(0)
+        
+        # LTP weights
+        ltp_w = torch.exp(-(self.connection.w - self.w_avg))
+        ltp_x = torch.exp(trace) - self.a
+        
+        # LTD weights
+        ltd_w = -torch.exp(self.connection.w - self.w_avg)
+        ltd_x = torch.exp(1 - trace) - self.a
+        
+        # Define total weight updates
+        dw = self.nu[0] * (ltp_w * ltp_x + ltd_w * ltd_x)
+        self.connection.w += dw
+        
+        super().update()
+        
+    def _conv2d_connection_update(self, **kwargs) -> None:
+        pass
+
+
+
+class CorrelatedThresholdFedeSTDP(LearningRule):
+    def __init__(
+        self,
+        connection: AbstractConnection,
+        nu: Optional[Union[float, Sequence[float]]] = None,
+        weight_decay: float = 0.0,
+        **kwargs
+    ) -> None:
+        super().__init__(
+            connection=connection, nu=nu, weight_decay=weight_decay, **kwargs
+        )
+
+        if isinstance(connection, (Connection, LocallyConnectedConnection)):
+            self.update = self._connection_update
+        elif isinstance(connection, Conv2dConnection):
+            self.update = self._conv2d_connection_update
+        else:
+            raise NotImplementedError(
+                "This learning rule is not supported for this Connection type."
+            )
+
+        self.w_avg = torch.tensor(kwargs.get("w_avg", 0.5))
+        self.a = torch.tensor(kwargs.get("a", 0.))
+        
+    def _connection_update(self, **kwargs) -> None:
+        # Normalize traces
+        pre_trace = self.connection.source.x.clone().float()
+        if len(list(pre_trace.shape)) > 1:
+            pre_trace = pre_trace[0, 0, 0, :]
+        pre_trace = pre_trace / (pre_trace.max() + 1e-6)
+        post_trace = self.connection.target.x.clone().float()
+        post_trace = post_trace / (post_trace.max() + 1e-6)
+        trace = pre_trace.unsqueeze(1) * post_trace.unsqueeze(0)
+        
+        # LTP weights
+        ltp_w = torch.exp(-(self.connection.w - self.w_avg))
+        ltp_x = torch.exp(trace) - self.a
+        
+        # LTD weights
+        ltd_w = -torch.exp(self.connection.w - self.w_avg)
+        ltd_x = torch.exp(1 - trace) - self.a
+        
+        # Define total weight updates
+        dw = self.nu[0] * (ltp_w * ltp_x + ltd_w * ltd_x)
+        self.connection.w += dw
+        
+        # LTP & LTD for thresholds
+        ltp_t = -torch.exp(self.source.thresh -self.source.thresh_avg).unsqueeze(1)
+        ltd_t = torch.exp(-(self.source.thresh - self.source.thresh_avg)).unsqueeze(1)
+        
+        # Define total threshold update
+        d_thresh = self.nu[1] * (ltp_t * ltp_x + ltd_t * ltd_x)
+        self.source.thresh += d_thresh.sum(1)
+        
+        super().update()
+        
     def _conv2d_connection_update(self, **kwargs) -> None:
         pass
