@@ -2,7 +2,6 @@ import tempfile
 from typing import Dict, Optional
 
 import torch
-
 from .monitors import AbstractMonitor
 from .nodes import AbstractInput, Nodes
 from .topology import AbstractConnection
@@ -283,6 +282,7 @@ class Network(torch.nn.Module):
         masks = kwargs.get("masks", {})
         injects_v = kwargs.get("injects_v", {})
         input_time_dim = kwargs.get("input_time_dim", 0)
+        train_layers = kwargs.get("train_layers", {})
 
         # # Compute reward.
         # if self.reward_fn is not None:
@@ -349,9 +349,10 @@ class Network(torch.nn.Module):
 
             # Run synapse updates.
             for c in self.connections:
-                self.connections[c].update(
-                    mask=masks.get(c, None), learning=self.learning, **kwargs
-                )
+                if train_layers.get(c, None):
+                    self.connections[c].update(
+                        mask=masks.get(c, None), learning=self.learning, **kwargs
+                    )
 
             # Get input to all layers.
             inpts.update(self.get_inputs())

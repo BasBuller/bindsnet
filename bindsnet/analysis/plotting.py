@@ -731,12 +731,12 @@ def plot_network_weights(network, save_dir=None):
 
 def plot_network_thresholds(network, start_value=None, save_dir=None):
     for i, (_, layer) in enumerate(network.layers.items()):
-        if i == 0:
+        if i != 1:
             continue
         thresholds_end = layer.thresh.clone()
         plt.figure(figsize=(10, 5))
         plt.plot(thresholds_end.numpy(), label="end")
-        if start_value:
+        if start_value is not None:
             thresholds_start = np.ones_like(thresholds_end.numpy()) * start_value
             plt.plot(thresholds_start, label="start")
         plt.legend()
@@ -745,7 +745,7 @@ def plot_network_thresholds(network, start_value=None, save_dir=None):
             plt.savefig(os.path.join(save_dir, "spiking_thresholds_layer{}.pdf".format(i)))
 
 
-def plot_network_spikes(network, dataset, spikes, time, save_dir=None):
+def plot_network_spikes(network, dataset, spikes, time, save_dir=None, save_str="spikes_signal_{}.pdf"):
     network = network.train(False)
     for i, test_sample in enumerate(dataset):
         inpts = {"input": test_sample["input"].unsqueeze(0)}
@@ -761,4 +761,4 @@ def plot_network_spikes(network, dataset, spikes, time, save_dir=None):
 
         plot_spikes(_spikes)
         if save_dir:
-            plt.savefig(os.path.join(save_dir, "spikes_signal_{}.pdf".format(i)))
+            plt.savefig(os.path.join(save_dir, save_str.format(i)))

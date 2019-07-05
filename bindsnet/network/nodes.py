@@ -1198,16 +1198,20 @@ class ImportanceLIFNodes(Nodes):
         :param lbound: Lower bound of the voltage.
         """
         super().__init__(n, shape, traces, traces_additive, tc_trace, trace_scale, sum_input)
+        
+        if not isinstance(thresh, torch.Tensor):
+            thresh = torch.ones(n) * thresh
+        thresh_avg = kwargs["thresh_avg"]
 
         self.register_buffer('rest', torch.tensor(rest))  # Rest voltage.
         self.register_buffer('reset', torch.tensor(reset))  # Post-spike reset voltage.
-        self.register_buffer('thresh', torch.ones(n)*thresh)  # Spike d voltage.
+        self.register_buffer('thresh', thresh)  # Spike d voltage.
         self.register_buffer('refrac', torch.tensor(refrac))  # Post-spike refractory period.
         self.register_buffer('tc_decay', torch.tensor(tc_decay))  # Time constant of neuron voltage decay.
         self.register_buffer('decay', torch.zeros(self.shape))  # Set in _compute_decays.
         self.register_buffer('v', self.rest * torch.ones(self.shape))  # Neuron voltages.
         self.register_buffer('refrac_count', torch.zeros(self.shape))  # Refractory period counters.
-        self.register_buffer('thresh_avg', torch.tensor(thresh))  # Average value for the thresholds
+        self.register_buffer('thresh_avg', torch.tensor(thresh_avg))  # Average value for the thresholds
 
         self.lbound = lbound  # Lower bound of voltage.
 
@@ -1222,6 +1226,10 @@ class ImportanceLIFNodes(Nodes):
         v_force = x - self.x
         delta_v = (-self.v + self.reset) / self.tc_decay + v_force
         self.v = self.v + delta_v
+
+        # For reference the trace decay function
+        # if self.traces and self.traces_additive:
+        #     self.x = self.x + (-self.x + self.trace_scale * self.s.float()) / self.tc_trace 
 
         # Decrement refractory counters.
         self.refrac_count = (self.refrac_count > 0).float() * (
