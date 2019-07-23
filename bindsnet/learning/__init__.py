@@ -1315,27 +1315,39 @@ class RewardCorrelatedThresholdFedeSTDP(LearningRule):
         post_trace = post_trace / (post_trace.max() + 1e-6)
         trace = pre_trace.unsqueeze(1) * post_trace.unsqueeze(0)
         
-        # LTP weights
-        ltp_w = torch.exp(-(self.connection.w - self.w_avg))
+        # LTP & LTD trace
         ltp_x = torch.exp(trace) - self.a
-        
-        # LTD weights
-        ltd_w = -torch.exp(self.connection.w - self.w_avg)
         ltd_x = torch.exp(1 - trace) - self.a
 
-        # Reward
+        # LTP & LTD weights
+        ltp_w = torch.exp(-(self.connection.w - self.w_avg))
+        ltd_w = -torch.exp(self.connection.w - self.w_avg)
+        
+        # LTP & LTD thresholds
+        ltp_t = -torch.exp(self.source.thresh -self.source.thresh_avg).unsqueeze(1)
+        ltd_t = torch.exp(-(self.source.thresh - self.source.thresh_avg)).unsqueeze(1)
+
+        # Reward and "guiding" trace values
         reward = kwargs.get("element_wise_reward", torch.zeros_like(ltp_x))
+        increase_idx = (reward == 1) & (ltp_x < ltd_x)  # LTP has to be larger than LTD to increase output
+        decrease_idx = (reward == -1) & (ltp_x > ltd_x)  # LTD has to be larger than LTP to decrease output
+
+        # Switch LTP and LTD where needed
+        store_ltp = ltp_x[increase_idx]
+        ltp_x[increase_idx] = ltd_x[increase_idx]
+        ltd_x[increase_idx] = store_ltp
+        store_ltp = ltp_x[decrease_idx]
+        ltp_x[decrease_idx] = ltd_x[decrease_idx]
+        ltd_x[decrease_idx] = store_ltp
         
         # Define total weight updates
         dw = self.nu[0] * (ltp_w * ltp_x + ltd_w * ltd_x)
+        dw[:, reward == 0] = 0
         self.connection.w += dw
-        
-        # LTP & LTD for thresholds
-        ltp_t = -torch.exp(self.source.thresh -self.source.thresh_avg).unsqueeze(1)
-        ltd_t = torch.exp(-(self.source.thresh - self.source.thresh_avg)).unsqueeze(1)
         
         # Define total threshold update
         d_thresh = self.nu[1] * (ltp_t * ltp_x + ltd_t * ltd_x)
+        d_thresh[:, reward == 0] = 0
         self.source.thresh += d_thresh.sum(1)
         
         super().update()
